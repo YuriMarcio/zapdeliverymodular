@@ -4,32 +4,28 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Category extends Model
+class Coupon extends Model
 {
     protected $fillable = [
         'tenant_id',
-        'name',
-        'slug',
-        'description',
-        'image_url',
-        'sort_order',
+        'code',
+        'type',
+        'value',
+        'expires_at',
+        'usage_limit',
         'active',
     ];
 
     protected $casts = [
+        'value' => 'decimal:2',
+        'expires_at' => 'datetime',
+        'usage_limit' => 'integer',
         'active' => 'boolean',
-        'sort_order' => 'integer',
     ];
 
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class, 'tenant_id');
-    }
-
-    public function products(): HasMany
-    {
-        return $this->hasMany(Product::class, 'category_id');
     }
 }

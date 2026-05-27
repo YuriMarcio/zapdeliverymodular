@@ -6,21 +6,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Category extends Model
+class TenantSubscription extends Model
 {
     protected $fillable = [
         'tenant_id',
-        'name',
-        'slug',
-        'description',
-        'image_url',
-        'sort_order',
-        'active',
+        'plan_name',
+        'gateway_subscription_id',
+        'status',
+        'trial_ends_at',
+        'expires_at',
     ];
 
     protected $casts = [
-        'active' => 'boolean',
-        'sort_order' => 'integer',
+        'trial_ends_at' => 'datetime',
+        'expires_at' => 'datetime',
     ];
 
     public function tenant(): BelongsTo
@@ -28,8 +27,8 @@ class Category extends Model
         return $this->belongsTo(Tenant::class, 'tenant_id');
     }
 
-    public function products(): HasMany
+    public function invoices(): HasMany
     {
-        return $this->hasMany(Product::class, 'category_id');
+        return $this->hasMany(TenantInvoice::class, 'subscription_id');
     }
 }

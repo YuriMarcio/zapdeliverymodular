@@ -6,21 +6,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Category extends Model
+class Flow extends Model
 {
     protected $fillable = [
         'tenant_id',
         'name',
-        'slug',
-        'description',
-        'image_url',
-        'sort_order',
+        'trigger',
         'active',
     ];
 
     protected $casts = [
         'active' => 'boolean',
-        'sort_order' => 'integer',
     ];
 
     public function tenant(): BelongsTo
@@ -28,8 +24,8 @@ class Category extends Model
         return $this->belongsTo(Tenant::class, 'tenant_id');
     }
 
-    public function products(): HasMany
+    public function steps(): HasMany
     {
-        return $this->hasMany(Product::class, 'category_id');
+        return $this->hasMany(FlowStep::class, 'flow_id');
     }
 }

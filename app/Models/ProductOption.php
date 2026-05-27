@@ -6,21 +6,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Category extends Model
+class ProductOption extends Model
 {
     protected $fillable = [
         'tenant_id',
+        'group_id',
         'name',
-        'slug',
-        'description',
-        'image_url',
-        'sort_order',
-        'active',
+        'price',
     ];
 
     protected $casts = [
-        'active' => 'boolean',
-        'sort_order' => 'integer',
+        'price' => 'decimal:2',
     ];
 
     public function tenant(): BelongsTo
@@ -28,8 +24,13 @@ class Category extends Model
         return $this->belongsTo(Tenant::class, 'tenant_id');
     }
 
-    public function products(): HasMany
+    public function group(): BelongsTo
     {
-        return $this->hasMany(Product::class, 'category_id');
+        return $this->belongsTo(ProductOptionGroup::class, 'group_id');
+    }
+
+    public function cartItemOptions(): HasMany
+    {
+        return $this->hasMany(CartItemOption::class, 'product_option_id');
     }
 }

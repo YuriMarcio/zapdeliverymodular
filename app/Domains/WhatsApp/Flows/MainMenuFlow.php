@@ -3,8 +3,8 @@
 namespace App\Domains\WhatsApp\Flows;
 
 use App\Domains\WhatsApp\Services\EvolutionService;
-use App\Models\Client;
-use App\Models\Store;
+use App\Models\Customer;
+use App\Models\Tenant;
 use App\Models\Product;
 use App\Models\Category; 
 use Illuminate\Support\Facades\Log;
@@ -22,8 +22,8 @@ class MainMenuFlow
     ): void {
         Log::info("Enviando menu principal para {$number}");
 
-        $client = Client::where('number', $number)->first();
-        $store = Store::where('whatsapp_instance', $instance)->first();
+        $client = Customer::where('phone', $number)->first();
+        $store = Tenant::where('whatsapp_instance', $instance)->first();
 
         if (!$store) {
             Log::error("Loja não encontrada para a instância {$instance}");

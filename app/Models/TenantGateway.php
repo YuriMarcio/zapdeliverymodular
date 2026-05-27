@@ -4,32 +4,27 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Category extends Model
+class TenantGateway extends Model
 {
     protected $fillable = [
         'tenant_id',
-        'name',
-        'slug',
-        'description',
-        'image_url',
-        'sort_order',
+        'provider',
+        'mp_user_id',
+        'access_token',
+        'refresh_token',
+        'public_key',
+        'token_expires_at',
         'active',
     ];
 
     protected $casts = [
         'active' => 'boolean',
-        'sort_order' => 'integer',
+        'token_expires_at' => 'datetime',
     ];
 
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class, 'tenant_id');
-    }
-
-    public function products(): HasMany
-    {
-        return $this->hasMany(Product::class, 'category_id');
     }
 }
