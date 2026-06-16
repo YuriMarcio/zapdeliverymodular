@@ -9,6 +9,7 @@
         "php": "^8.3",
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0",
+        "mercadopago/dx-php": "^3.10",
         "predis/predis": "^3.4",
         "stancl/tenancy": "^3.10"
     },

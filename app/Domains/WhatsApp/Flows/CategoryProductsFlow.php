@@ -94,10 +94,16 @@ class CategoryProductsFlow
             return;
         }
 
-        $cards = $products->map(fn($product) => [
+        $cards = $products->map(function ($product) {
+            $hasPromo = !is_null($product->promotion_price);
+            $footer   = $hasPromo
+                ? 'R$ ' . number_format($product->price, 2, ',', '.') . ' ➡️ 🔥 R$ ' . number_format($product->promotion_price, 2, ',', '.')
+                : '💰 R$ ' . number_format($product->price, 2, ',', '.');
+
+            return [
             'title'    => $product->name,
             'body'     => $product->description ?? $product->name,
-            'footer'   => '💰 R$ ' . number_format($product->price, 2, ',', '.'),
+            'footer'   => $footer,
             'imageUrl' => $product->image_url ?? 'https://via.placeholder.com/300',
             'buttons'  => [
                 [
@@ -111,7 +117,7 @@ class CategoryProductsFlow
                     'id'          => 'CHOOSE_QTY_' . $product->id,
                 ]
             ]
-        ])->values()->toArray();
+        ]; })->values()->toArray();
 
         $this->evolution->sendCarousel(
             $instance,

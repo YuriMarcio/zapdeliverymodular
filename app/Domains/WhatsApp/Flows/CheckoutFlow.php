@@ -4,11 +4,13 @@ namespace App\Domains\WhatsApp\Flows;
 
 use App\Domains\WhatsApp\Services\ConversationStateService;
 use App\Domains\WhatsApp\Services\EvolutionService;
+use App\Domains\WhatsApp\Services\MercadoPagoService;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Tenant;
+use App\Models\TenantGateway;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -426,11 +428,14 @@ class CheckoutFlow
         // Cria os itens do pedido
         foreach ($cart->items as $item) {
             OrderItem::create([
+                'tenant_id'  => $store->id,
                 'order_id'   => $order->id,
+                'name'       => $item->product->name,
                 'product_id' => $item->product_id,
                 'quantity'   => $item->quantity,
                 'unit_price' => $item->unit_price,
-                'total'      => $item->unit_price * $item->quantity,
+                'total_price' => $item->unit_price * $item->quantity,
+                'notes'      => $item->notes,
             ]);
         }
 
@@ -438,29 +443,7 @@ class CheckoutFlow
         $this->state->clearCart($cart);
         $this->state->clearContext($conversation);
 
-        // TODO: gerar link real do gateway
-        $paymentUrl = url("/pay/{$order->number}");
-
-        $msg  = "Tudo certo com o seu pedido! ✅\n\n";
-        $msg .= "📦 *Pedido:* {$orderNumber}\n";
-        $msg .= "💰 *Total a pagar:* R$ " . number_format($total, 2, ',', '.') . "\n\n";
-        $msg .= "🔒 Aceitamos PIX ou Cartão em ambiente seguro.\n\n";
-        $msg .= "É só clicar no botão abaixo. Assim que o pagamento for aprovado, te aviso aqui mesmo!\n👇";
-
-        $this->evolution->sendButtons(
-            $instance,
-            $number,
-            'Tudo certo com o seu pedido! ✅',
-            $msg,
-            '',
-            [
-                [
-                    'type'        => 'url',
-                    'displayText' => '🔗 Abrir link de pagamento',
-                    'url'         => $paymentUrl,
-                ]
-            ]
-        );
+        $this->sendPaymentMessage($instance, $number, $store, $order, $customer, $total, $orderNumber);
     }
 
     /*
@@ -512,11 +495,14 @@ class CheckoutFlow
 
         foreach ($cart->items as $item) {
             OrderItem::create([
-                'order_id'   => $order->id,
-                'product_id' => $item->product_id,
-                'quantity'   => $item->quantity,
-                'unit_price' => $item->unit_price,
-                'total'      => $item->unit_price * $item->quantity,
+                'tenant_id'   => $store->id,
+                'order_id'    => $order->id,
+                'name'        => $item->product->name,
+                'product_id'  => $item->product_id,
+                'quantity'    => $item->quantity,
+                'unit_price'  => $item->unit_price,
+                'total_price' => $item->unit_price * $item->quantity,
+                'notes'       => $item->notes,
             ]);
         }
 
@@ -525,28 +511,7 @@ class CheckoutFlow
             $this->state->clearContext($conversation);
         }
 
-        $paymentUrl = url("/pay/{$order->number}");
-
-        $msg  = "Tudo certo com o seu pedido! ✅\n\n";
-        $msg .= "📦 *Pedido:* {$orderNumber}\n";
-        $msg .= "💰 *Total a pagar:* R$ " . number_format($total, 2, ',', '.') . "\n\n";
-        $msg .= "🔒 Aceitamos PIX ou Cartão em ambiente seguro.\n\n";
-        $msg .= "Clique no botão abaixo para pagar. Assim que confirmado, te aviso aqui! 👇";
-
-        $this->evolution->sendButtons(
-            $instance,
-            $number,
-            'Tudo certo com o seu pedido! ✅',
-            $msg,
-            '',
-            [
-                [
-                    'type'        => 'url',
-                    'displayText' => '💳 Pagar no Mercado Pago',
-                    'url'         => $paymentUrl,
-                ]
-            ]
-        );
+        $this->sendPaymentMessage($instance, $number, $store, $order, $customer, $total, $orderNumber);
     }
 
     /*
@@ -569,5 +534,93 @@ class CheckoutFlow
         }
 
         app(MainMenuFlow::class)->handle($instance, $number);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Resolução do link/PIX de pagamento
+    |--------------------------------------------------------------------------
+    */
+
+    private function resolvePaymentUrl(Tenant $store, Order $order, Customer $customer): string
+    {
+        return url("/pay/{$order->number}");
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Envia mensagem de pagamento (PIX ou link)
+    |--------------------------------------------------------------------------
+    */
+
+    private function sendPaymentMessage(
+        string   $instance,
+        string   $number,
+        Tenant   $store,
+        Order    $order,
+        Customer $customer,
+        float    $total,
+        string   $orderNumber
+    ): void {
+        $gateway = TenantGateway::where('tenant_id', $store->id)
+                                ->where('active', true)
+                                ->first();
+
+        if ($gateway && $gateway->access_token) {
+            $mp   = app(MercadoPagoService::class);
+            $pix  = $mp->createPixPayment($order, $customer, $gateway->access_token);
+
+            if ($pix) {
+                // Salva o ID do pagamento MP no pedido para o webhook
+                $order->update(['notes' => 'mp_payment_id:' . $pix['payment_id']]);
+
+                $header = "✅ Pedido *{$orderNumber}* confirmado!\n💰 Total: R$ " . number_format($total, 2, ',', '.');
+
+                // Envia QR code como imagem se disponível
+                if ($pix['qr_code_base64']) {
+                    $this->evolution->sendImage(
+                        $instance,
+                        $number,
+                        'data:image/png;base64,' . $pix['qr_code_base64'],
+                        "📱 Escaneie o QR code para pagar via PIX\n{$header}"
+                    );
+                }
+
+                // Envia código PIX copia e cola
+                if ($pix['qr_code']) {
+                    $this->evolution->sendText(
+                        $instance,
+                        $number,
+                        "📋 *PIX Copia e Cola:*\n```\n{$pix['qr_code']}\n```\n\nAssim que o pagamento for confirmado, você receberá uma mensagem aqui. ✅"
+                    );
+                }
+
+                return;
+            }
+        }
+
+        // Fallback: link de pagamento web
+        $paymentUrl = $this->resolvePaymentUrl($store, $order, $customer);
+
+        $msg  = "Tudo certo com o seu pedido! ✅\n\n";
+        $msg .= "📦 *Pedido:* {$orderNumber}\n";
+        $msg .= "💰 *Total a pagar:* R$ " . number_format($total, 2, ',', '.') . "\n\n";
+        $msg .= "🔒 Aceitamos PIX ou Cartão em ambiente seguro.\n\n";
+        $msg .= "Clique no botão abaixo para pagar. Assim que confirmado, te aviso aqui! 👇";
+
+        $this->evolution->sendButtons(
+            $instance,
+            $number,
+            'Tudo certo com o seu pedido! ✅',
+            $msg,
+            '',
+            [
+                [
+                    'type'        => 'url',
+                    'displayText' => '💳 Pagar no Mercado Pago',
+                    'url'         => $paymentUrl,
+                ]
+            ]
+        );
     }
 }

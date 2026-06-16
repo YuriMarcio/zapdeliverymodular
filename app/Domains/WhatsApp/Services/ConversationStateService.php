@@ -19,12 +19,13 @@ class ConversationStateService
     | Etapas possíveis
     |--------------------------------------------------------------------------
     */
-    public const STEP_IDLE             = null;
-    public const STEP_WAITING_EMAIL    = 'waiting_email';
-    public const STEP_WAITING_ADDRESS  = 'waiting_address';
+    public const STEP_IDLE              = null;
+    public const STEP_WAITING_EMAIL     = 'waiting_email';
+    public const STEP_WAITING_ADDRESS   = 'waiting_address';
     public const STEP_WAITING_REFERENCE = 'waiting_reference';
-    public const STEP_CONFIRMING_DATA  = 'confirming_data';
-    public const STEP_ORDER_SUMMARY    = 'order_summary';
+    public const STEP_CONFIRMING_DATA   = 'confirming_data';
+    public const STEP_ORDER_SUMMARY     = 'order_summary';
+    public const STEP_WAITING_ITEM_NOTE = 'waiting_item_note';
 
     /*
     |--------------------------------------------------------------------------

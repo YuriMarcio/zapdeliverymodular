@@ -4,11 +4,13 @@ namespace App\Domains\WhatsApp\Flows;
 
 use App\Domains\WhatsApp\Services\ConversationStateService;
 use App\Domains\WhatsApp\Services\EvolutionService;
+use App\Jobs\SendCartConfirmationJob;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Tenant;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AddToCartFlow
 {
@@ -42,30 +44,19 @@ class AddToCartFlow
             // Garante o carrinho
             $cart = $this->state->getOrCreateCart($store->id, $customer->id);
             
-            // Adiciona ou soma o produto passando a quantidade
-            $this->state->addToCart($cart, $store->id, $product->id, $product->price, $quantity);
+            // Adiciona ou soma o produto passando a quantidade (usa preço promocional se houver)
+            $price = $product->promotion_price ?? $product->price;
+            $this->state->addToCart($cart, $store->id, $product->id, $price, $quantity);
 
             return $cart;
         });
 
-        $cart->load('items.product');
+        // Debounce: armazena timestamp e despacha job com delay de 4 segundos.
+        // Se o cliente clicar em vários produtos rapidamente, apenas o último job envia a mensagem.
+        $timestamp = now()->timestamp;
+        Cache::put("cart_confirm_{$store->id}_{$number}", $timestamp, 30);
 
-        $totalItems = $cart->items->sum('quantity');
-        $noun       = $totalItems === 1 ? 'item' : 'itens';
-
-        $this->evolution->sendButtons(
-            $instance,
-            $number,
-            "✅ *{$quantity}x {$product->name}* adicionado!",
-            "Você tem *{$totalItems} {$noun}* no carrinho.",
-            '',
-            [
-                [
-                    'type'        => 'reply',
-                    'displayText' => '🛒 Ver carrinho',
-                    'id'          => 'VIEW_CART',
-                ]
-            ]
-        );
+        SendCartConfirmationJob::dispatch($instance, $number, $store->id, $timestamp)
+            ->delay(now()->addSeconds(4));
     }
 }

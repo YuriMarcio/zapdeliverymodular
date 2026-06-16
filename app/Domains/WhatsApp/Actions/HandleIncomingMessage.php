@@ -16,6 +16,7 @@ use App\Models\CartItem;
 use App\Models\Customer;
 use App\Models\Tenant;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class HandleIncomingMessage
 {
@@ -252,6 +253,30 @@ class HandleIncomingMessage
             $buttonId === 'EDIT_ORDER'
                 => app(CheckoutFlow::class)->editOrder($instance, $number),
 
+            // ── Adicionar observação a item do carrinho ────────────────────────
+            str_starts_with($buttonId, 'ADD_NOTE_ITEM_')
+                => (function () use ($instance, $number, $buttonId) {
+                    $cartItemId = (int) str_replace('ADD_NOTE_ITEM_', '', $buttonId);
+                    $item       = CartItem::with('product')->find($cartItemId);
+                    if (!$item) return;
+
+                    $store    = Tenant::where('whatsapp_instance', $instance)->first();
+                    if (!$store) return;
+                    $customer = Customer::where('tenant_id', $store->id)->where('phone', $number)->first();
+                    if (!$customer) return;
+
+                    $conversation = $this->state->getOrCreateConversation($store->id, $customer->id);
+                    $this->state->setStep($conversation, ConversationStateService::STEP_WAITING_ITEM_NOTE);
+                    $this->state->setContext($conversation, ['pending_cart_item_id' => $cartItemId]);
+
+                    $currentNote = $item->notes ? "\n_Observação atual: {$item->notes}_" : '';
+                    app(EvolutionService::class)->sendText(
+                        $instance,
+                        $number,
+                        "✏️ Digite a observação para *{$item->product->name}*:\n_Ex: sem cebola, sem pimenta, bem passado_{$currentNote}"
+                    );
+                })(),
+
             // ── Não mapeado ───────────────────────────────────────────────────
             default => Log::warning("Botão não mapeado: {$buttonId}"),
         };
@@ -265,14 +290,18 @@ class HandleIncomingMessage
 
     private function routeText(string $instance, string $number, string $text): void
     {
-        // Verifica se há fluxo de checkout ativo para este número
+        // Verifica se há fluxo ativo (observação de item ou checkout)
         $store = Tenant::where('whatsapp_instance', $instance)->first();
         if ($store) {
             $customer = Customer::where('tenant_id', $store->id)->where('phone', $number)->first();
             if ($customer) {
                 $conversation = $this->state->getConversation($store->id, $customer->id);
                 if ($conversation && $conversation->step) {
-                    app(CheckoutFlow::class)->processText($instance, $number, $text);
+                    if ($conversation->step === ConversationStateService::STEP_WAITING_ITEM_NOTE) {
+                        $this->processItemNote($instance, $number, $text, $store->id, $customer->id, $conversation);
+                    } else {
+                        app(CheckoutFlow::class)->processText($instance, $number, $text);
+                    }
                     return;
                 }
             }
@@ -305,5 +334,31 @@ class HandleIncomingMessage
         }
 
         Log::info("Texto não mapeado: '{$text}' de {$number}");
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Processa a observação digitada para um item do carrinho
+    |--------------------------------------------------------------------------
+    */
+
+    private function processItemNote(string $instance, string $number, string $text, string $tenantId, int $customerId, $conversation): void
+    {
+        $ctx        = $this->state->getContext($conversation);
+        $cartItemId = $ctx['pending_cart_item_id'] ?? null;
+
+        if (!$cartItemId) {
+            $this->state->clearContext($conversation);
+            return;
+        }
+
+        $item = CartItem::find($cartItemId);
+        if ($item) {
+            $item->update(['notes' => $text ?: null]);
+        }
+
+        $this->state->clearContext($conversation);
+
+        app(CartSummaryFlow::class)->handle($instance, $number);
     }
 }

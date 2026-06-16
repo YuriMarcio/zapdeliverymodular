@@ -31,24 +31,35 @@ class CartEditFlow
             return;
         }
 
-        $cards = $cart->items->map(fn ($item) => [
-            'title'    => "{$item->quantity}x {$item->product->name}",
-            'body'     => "R$ " . number_format($item->unit_price * $item->quantity, 2, ',', '.'),
-            'footer'   => 'Unitário: R$ ' . number_format($item->unit_price, 2, ',', '.'),
-            'imageUrl' => $item->product->image_url ?? 'https://via.placeholder.com/300',
-            'buttons'  => [
-                [
-                    'type'        => 'reply',
-                    'displayText' => '🗑️ Remover',
-                    'id'          => 'REMOVE_ITEM_' . $item->id,
+        $cards = $cart->items->map(function ($item) {
+            $noteLabel = $item->notes
+                ? '📝 Obs: ' . mb_strimwidth($item->notes, 0, 20, '…')
+                : '📝 Adicionar observação';
+
+            return [
+                'title'    => "{$item->quantity}x {$item->product->name}",
+                'body'     => 'R$ ' . number_format($item->unit_price * $item->quantity, 2, ',', '.'),
+                'footer'   => 'Unitário: R$ ' . number_format($item->unit_price, 2, ',', '.'),
+                'imageUrl' => $item->product->image_url ?? 'https://via.placeholder.com/300',
+                'buttons'  => [
+                    [
+                        'type'        => 'reply',
+                        'displayText' => '🗑️ Remover',
+                        'id'          => 'REMOVE_ITEM_' . $item->id,
+                    ],
+                    [
+                        'type'        => 'reply',
+                        'displayText' => '✏️ Editar qtd',
+                        'id'          => 'EDIT_ITEM_' . $item->id,
+                    ],
+                    [
+                        'type'        => 'reply',
+                        'displayText' => $noteLabel,
+                        'id'          => 'ADD_NOTE_ITEM_' . $item->id,
+                    ],
                 ],
-                [
-                    'type'        => 'reply',
-                    'displayText' => '✏️ Editar quantidade',
-                    'id'          => 'EDIT_ITEM_' . $item->id,
-                ],
-            ],
-        ])->values()->toArray();
+            ];
+        })->values()->toArray();
 
         $this->evolution->sendCarousel(
             $instance,
