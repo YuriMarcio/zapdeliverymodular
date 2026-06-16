@@ -3,122 +3,112 @@
 namespace App\Domains\WhatsApp\Flows;
 
 use App\Domains\WhatsApp\Services\EvolutionService;
+use App\Models\Category;
 use App\Models\Customer;
+use App\Models\PromotionCampaign;
 use App\Models\Tenant;
-use App\Models\Product;
-use App\Models\Category; 
 use Illuminate\Support\Facades\Log;
 
 class MainMenuFlow
 {
     public function __construct(
         protected EvolutionService $evolution
-    ) {
-    }
+    ) {}
 
-    public function handle(
-        string $instance,
-        string $number
-    ): void {
+    public function handle(string $instance, string $number): void
+    {
         Log::info("Enviando menu principal para {$number}");
 
         $client = Customer::where('phone', $number)->first();
-        $store = Tenant::where('whatsapp_instance', $instance)->first();
+        $store  = Tenant::where('whatsapp_instance', $instance)->first();
 
         if (!$store) {
             Log::error("Loja não encontrada para a instância {$instance}");
             return;
         }
 
-        // 1. Correção na formatação da saudação
-        $storeName = $store->name ?? 'nossa loja'; 
-        $greeting = $client 
-            ? "🍔 Bem-vindo de volta!" 
-            : "🍔 Bem-vindo ao {$storeName}!";
-
+        $storeName   = $store->name ?? 'nossa loja';
+        $greeting    = $client ? "🍔 Bem-vindo de volta!" : "🍔 Bem-vindo ao {$storeName}!";
         $description = "Estou aqui para matar sua fome em poucos segundos 🚀";
 
-        // 2. Verifica se existe algum produto em promoção ativo nesta loja
-        $promoProduct = Product::where('store_id', $store->id)
-            ->where('is_promotion', true) // Ajuste o nome da coluna do seu DB
+        /*
+        |--------------------------------------------------------------------------
+        | Busca campanha ativa
+        |--------------------------------------------------------------------------
+        */
+        $campaign = PromotionCampaign::where('tenant_id', $store->id)
+            ->where('is_active', true)
+            ->where(function ($q) {
+                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+            })
+            ->where(function ($q) {
+                $q->whereNull('ends_at')->orWhere('ends_at', '>=', now());
+            })
             ->first();
 
-        // 3. Fluxo 1: Com Promoção (Envia Imagem + Botão)
-        if ($promoProduct) {
-            
-            $buttons = [
-                [
-                    "type" => "reply",
-                    "displayText" => "🔥 Ver promoções",
-                    "id" => "VER_PRODUCTS_PROMO"
-                ],
-                [
-                    "type" => "reply",
-                    "displayText" => "🏪 Ver cardápio",
-                    "id" => "VER_MENU"
-                ]
-            ];
+        /*
+        |--------------------------------------------------------------------------
+        | COM campanha → imagem do banner + botões
+        |--------------------------------------------------------------------------
+        */
+        if ($campaign) {
+            Log::info("Campanha ativa encontrada: {$campaign->id}");
 
-            // Supondo que você crie/tenha um método para enviar botões com anexo de mídia na Evolution API
-            $this->evolution->sendMediaButtons(
+            $this->evolution->sendButtonsWithImage(
                 $instance,
                 $number,
                 $greeting,
-                $description,
-                "Escolha uma opção",
-                $promoProduct->image_url, // URL da imagem do produto
-                $buttons
+                $campaign->description ?? $description,
+                $campaign->banner_url,
+                [
+                    [
+                        'type'        => 'reply',
+                        'displayText' => '🔥 Ver promoções',
+                        'id'          => 'VIEW_PROMOTION_CAMPAIGN_' . $campaign->id,
+                    ],
+                    [
+                        'type'        => 'reply',
+                        'displayText' => '📖 Ver cardápio',
+                        'id'          => 'VER_CATEGORY_',
+                    ],
+                ]
             );
 
             return;
         }
 
-        // 4. Fluxo 2: Sem Promoção (Envia Mensagem + Carrossel de Categorias)
-        
-        // Primeiro, envia a mensagem de boas-vindas
-        $this->evolution->sendText(
-            $instance, 
-            $number, 
-            "{$greeting}\n{$description}\n\nConfira nossas categorias abaixo 👇"
+        /*
+        |--------------------------------------------------------------------------
+        | SEM campanha → carrossel de categorias
+        |--------------------------------------------------------------------------
+        */
+        $categories = Category::where('tenant_id', $store->id)->get();
+
+        if ($categories->isEmpty()) {
+            $this->evolution->sendText($instance, $number, "{$greeting}\n{$description}\n\n😕 Nenhuma categoria disponível no momento.");
+            return;
+        }
+
+        $cards = $categories->map(fn($category) => [
+            'title'    => $category->name,
+            'body'     => $category->description ?? "Explore nossos pratos de {$category->name}",
+            'imageUrl' => $category->image_url,
+            'buttons'  => [
+                [
+                    'type'        => 'reply',
+                    'displayText' => '📖 Ver ' . $category->name,
+                    'id'          => 'VER_CATEGORY_' . $category->id,
+                ]
+            ],
+        ])->values()->toArray();
+
+        $this->evolution->sendCarousel(
+            $instance,
+            $number,
+            "{$greeting}\n{$description}",
+            $cards
         );
 
-        // Busca as categorias da loja
-        $categories = Category::where('store_id', $store->id)->get();
-        $carouselCards = [];
-
-        foreach ($categories as $category) {
-            // Estrutura padrão de Cards para Carrossel na Evolution API (Baileys)
-            $carouselCards[] = [
-                "header" => [
-                    "title" => $category->name,
-                    "subtitle" => "Ver itens",
-                    "hasMediaAttachment" => true,
-                    "imageMessage" => $category->image_url // Ajuste conforme necessário
-                ],
-                "body" => [
-                    "text" => $category->description ?? "Explore nossos pratos de {$category->name}"
-                ],
-                "nativeFlowMessage" => [
-                    "buttons" => [
-                        [
-                            "name" => "quick_reply",
-                            "buttonParamsJson" => json_encode([
-                                "display_text" => "Ver " . $category->name,
-                                "id" => "VER_CATEGORY_" . $category->id
-                            ])
-                        ]
-                    ]
-                ]
-            ];
-        }
-
-        // Chama o método para enviar o carrossel (ajuste conforme a assinatura no seu EvolutionService)
-        if (!empty($carouselCards)) {
-            $this->evolution->sendCarousel(
-                $instance,
-                $number,
-                $carouselCards
-            );
-        }
+        Log::info("Menu principal enviado com sucesso para {$number}");
     }
 }

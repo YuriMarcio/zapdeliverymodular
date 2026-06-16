@@ -9,17 +9,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Conversation extends Model
 {
     protected $fillable = [
-        'tenant_id',
-        'customer_id',
-        'status',
-        'last_message_at',
-        'assigned_to',
+        'tenant_id', 'customer_id', 'status',
+        'last_message_at', 'assigned_to',
+        'step',    // ← novo
+        'context', // ← novo
     ];
+
 
     protected $casts = [
         'last_message_at' => 'datetime',
+        'context'         => 'array', // ← novo
     ];
-
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class, 'tenant_id');

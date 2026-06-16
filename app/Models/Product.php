@@ -18,6 +18,7 @@ class Product extends Model
         'promotion_price',
         'image_url',
         'promotion_img_url',
+        'is_promotion',
         'active',
         'featured',
     ];
