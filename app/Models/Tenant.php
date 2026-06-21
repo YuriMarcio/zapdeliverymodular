@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Stancl\Tenancy\Database\Models\Tenant as BaseTenant;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Tenant extends BaseTenant
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'id',
         'name',
@@ -43,6 +46,16 @@ class Tenant extends BaseTenant
     public function subscriptions(): HasMany
     {
         return $this->hasMany(TenantSubscription::class, 'tenant_id');
+    }
+
+    public function planConfig(): ?Plan
+    {
+        return Plan::where('slug', $this->plan)->first();
+    }
+
+    public function hasFeature(string $key): bool
+    {
+        return $this->planConfig()?->hasFeature($key) ?? false;
     }
 
     public function invoices(): HasMany

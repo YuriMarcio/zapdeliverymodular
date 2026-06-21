@@ -9,10 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Conversation extends Model
 {
     protected $fillable = [
-        'tenant_id', 'customer_id', 'status',
+        'tenant_id', 'customer_id', 'status', 'tag', 'unread_count',
         'last_message_at', 'assigned_to',
-        'step',    // ← novo
-        'context', // ← novo
+        'step', 'context',
     ];
 
 

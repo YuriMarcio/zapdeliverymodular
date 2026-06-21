@@ -24,6 +24,40 @@ class EvolutionService
         ])->post("{$this->baseUrl}{$endpoint}", $payload);
     }
 
+    protected function get(string $endpoint, array $query = [])
+    {
+        return Http::withHeaders([
+            'apikey' => $this->apiKey,
+        ])->get("{$this->baseUrl}{$endpoint}", $query);
+    }
+
+    public function fetchChats(string $instanceName): array
+    {
+        $response = $this->request("/chat/findChats/{$instanceName}");
+        return $response->successful() ? ($response->json() ?? []) : [];
+    }
+
+    public function fetchMessages(string $instanceName, string $remoteJid, int $limit = 50): array
+    {
+        $response = $this->request("/chat/findMessages/{$instanceName}", [
+            'where' => ['key' => ['remoteJid' => $remoteJid]],
+            'limit' => $limit,
+        ]);
+        return $response->successful() ? ($response->json('messages.records') ?? []) : [];
+    }
+
+    public function fetchContacts(string $instanceName): array
+    {
+        $response = $this->request("/chat/findContacts/{$instanceName}");
+        return $response->successful() ? ($response->json() ?? []) : [];
+    }
+
+    public function connectionState(string $instanceName): string
+    {
+        $response = $this->get("/instance/connectionState/{$instanceName}");
+        return $response->json('instance.state') ?? 'unknown';
+    }
+
     public function sendButtonsWithImage(
         string $instanceName,
         string $number,
@@ -62,7 +96,7 @@ class EvolutionService
                 'webhook' => [
                     'enabled' => true,
                     'url'     => env('WHATSAPP_WEBHOOK_URL'),
-                    'events'  => ['MESSAGES_UPSERT']
+                    'events'  => ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
                 ]
             ])->json();
     }

@@ -14,9 +14,10 @@ use App\Domains\WhatsApp\Services\ConversationStateService;
 use App\Domains\WhatsApp\Services\EvolutionService;
 use App\Models\CartItem;
 use App\Models\Customer;
+use App\Models\Message;
 use App\Models\Tenant;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class HandleIncomingMessage
 {
@@ -53,12 +54,72 @@ class HandleIncomingMessage
 
         Log::info("HandleIncomingMessage | instância={$instance} número={$number} buttonId={$buttonId} texto={$text}");
 
+        // Persiste mensagem recebida no banco e atualiza conversa
+        $this->persistIncomingMessage($instance, $number, $message, $text, $buttonId);
+
         if ($buttonId) {
             $this->routeButton($instance, $number, $buttonId);
             return;
         }
 
         $this->routeText($instance, $number, $text);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Persistência da mensagem recebida no banco de dados
+    |--------------------------------------------------------------------------
+    */
+
+    private function persistIncomingMessage(
+        string $instance,
+        string $number,
+        array $message,
+        string $text,
+        ?string $buttonId
+    ): void {
+        try {
+            $store = Tenant::where('whatsapp_instance', $instance)->first();
+            if (!$store) return;
+
+            $customer = Customer::firstOrCreate(
+                ['tenant_id' => $store->id, 'phone' => $number],
+                ['name' => null]
+            );
+
+            $conversation = $this->state->getOrCreateConversation($store->id, $customer->id);
+
+            // Determina o tipo e corpo da mensagem
+            $hasImage = !empty(data_get($message, 'imageMessage'));
+            $hasAudio = !empty(data_get($message, 'audioMessage'));
+            $hasDoc   = !empty(data_get($message, 'documentMessage'));
+
+            $messageType = match (true) {
+                $hasImage => 'image',
+                $hasAudio => 'audio',
+                $hasDoc   => 'document',
+                default   => 'text',
+            };
+
+            $body = $text ?: ($buttonId ? "[botão: {$buttonId}]" : null);
+
+            Message::create([
+                'tenant_id'       => $store->id,
+                'conversation_id' => $conversation->id,
+                'from_me'         => false,
+                'message_type'    => $messageType,
+                'body'            => $body,
+                'media_url'       => data_get($message, 'imageMessage.url')
+                                   ?? data_get($message, 'audioMessage.url')
+                                   ?? data_get($message, 'documentMessage.url'),
+            ]);
+
+            $conversation->increment('unread_count');
+            $conversation->update(['last_message_at' => now()]);
+
+        } catch (\Throwable $e) {
+            Log::error('persistIncomingMessage error: ' . $e->getMessage());
+        }
     }
 
     /*

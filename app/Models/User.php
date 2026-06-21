@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Tymon\JWTAuth\Contracts\JWTSubject;
+use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -17,8 +17,10 @@ class User extends Authenticatable implements JWTSubject
         'tenant_id',
         'name',
         'email',
+        'phone',
         'password',
         'role',
+        'must_change_password',
     ];
 
     protected $hidden = [
@@ -28,6 +30,7 @@ class User extends Authenticatable implements JWTSubject
 
     protected $casts = [
         'password' => 'hashed',
+        'must_change_password' => 'boolean',
     ];
 
     public function getJWTIdentifier(): mixed
